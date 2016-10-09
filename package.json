@@ -41,11 +41,10 @@
     "ember-load-initializers": "^0.5.1",
     "ember-resolver": "^2.0.3",
     "ember-stringify": "0.0.2",
-    "gl-matrix": "^2.3.2",
-    "gl-now": "^1.4.0",
     "gl-texture2d": "^2.0.11",
     "glsl-transition": "^1.0.2",
     "liquid-fire": "0.26.1",
-    "loader.js": "^4.0.1"
+    "loader.js": "^4.0.1",
+    "raf": "^3.3.0"
   }
 }

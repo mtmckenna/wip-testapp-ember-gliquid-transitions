@@ -5,8 +5,6 @@ import createTransition from 'npm:glsl-transition';
 import raf from 'npm:raf';
 import RSVP from 'rsvp';
 
-const D2I_OPTS = { style: { visibility: 'visible' } };
-
 const DURATION = 1000.0;
 
 const TRANSITIONS = {
@@ -29,21 +27,42 @@ const TRANSITIONS = {
       "zoom" : 30.0,
       "colorSeparation" : 0.3
     }
+  },
+  undulating: {
+    "glsl" : "#ifdef GL_ES\nprecision highp float;\n#endif\n\n#define \tM_PI   3.14159265358979323846\t/* pi */\n\n// General parameters\nuniform sampler2D from;\nuniform sampler2D to;\nuniform float progress;\nuniform vec2 resolution;\n \nuniform float smoothness;\nconst vec2 center = vec2(0.5, 0.5);\n\nfloat quadraticInOut(float t) {\n  float p = 2.0 * t * t;\n  return t < 0.5 ? p : -p + (4.0 * t) - 1.0;\n}\n\nfloat linearInterp(vec2 range, vec2 domain, float x) {\n  return mix(range.x, range.y, smoothstep(domain.x, domain.y, clamp(x, domain.x, domain.y)));\n}\n\nfloat getGradient(float r, float dist) {\n  float grad = smoothstep(-smoothness, 0.0, r - dist * (1.0 + smoothness)); //, 0.0, 1.0);\n  if (r - dist < 0.005 && r - dist > -0.005) {\n    return -1.0;\n  } else if (r - dist < 0.01 && r - dist > -0.005) {\n   return -2.0;\n  }\n  return grad;\n}\n\nfloat round(float a) {\n  return floor(a + 0.5);\n}\n\nfloat getWave(vec2 p){\n  \n  // I'd really like to figure out how to make the ends meet on my circle.\n  // The left side is where the ends don't meet.\n  \n  vec2 _p = p - center; // offset from center\n  float rads = atan(_p.y, _p.x);\n  float degs = degrees(rads) + 180.0;\n  vec2 range = vec2(0.0, M_PI * 30.0);\n  vec2 domain = vec2(0.0, 360.0);\n  \n  float ratio = (M_PI * 30.0) / 360.0;\n  //degs = linearInterp(range, domain, degs);\n  degs = degs * ratio;\n  float x = progress;\n  float magnitude = mix(0.02, 0.09, smoothstep(0.0, 1.0, x));\n  float offset = mix(40.0, 30.0, smoothstep(0.0, 1.0, x));\n  float ease_degs = quadraticInOut(sin(degs));\n  \n  float deg_wave_pos = (ease_degs * magnitude) * sin(x * offset);\n  return x + deg_wave_pos;\n}\n\nvoid main() {\n  vec2 p = gl_FragCoord.xy / resolution.xy;\n  \n  if (progress == 0.0) {\n    gl_FragColor = texture2D(from, p);\n  } else if (progress == 1.0) {\n    gl_FragColor = texture2D(to, p);\n  } else {\n    float dist = distance(center, p);\n    float m = getGradient(getWave(p), dist);\n    if (m == -2.0) {\n      //gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);\n      //gl_FragColor = mix(texture2D(from, p), texture2D(to, p), -1.0);\n      gl_FragColor = mix(texture2D(from, p), vec4(0.0, 0.0, 0.0, 1.0), 0.75);\n    } else {\n      gl_FragColor = mix(texture2D(from, p), texture2D(to, p), m);    \n    }\n  }\n  \n}",
+    "uniforms" : {
+      "smoothness" : 0.02
+    }
+  },
+  doomScreen: {
+    "glsl" : "#ifdef GL_ES\nprecision highp float;\n#endif\n\n\n// Hardcoded parameters --------\n\nuniform sampler2D from, to;\nuniform float progress;\nuniform vec2 resolution;\n\n\n// Transition parameters --------\n\n// default barWidth = 10\nuniform int barWidth; // Number of bars\n\n// default amplitude = 2\nuniform float amplitude; // 0 = no variation when going down, higher = some elements go much faster\n\n// default noise = 0.1\nuniform float noise; // 0 = no noise, 1 = super noisy\n\n// default frequency = 1\nuniform float frequency; // the bigger the value, the shorter the waves\n\n// The code proper --------\n\nfloat rand(int num) {\n  return fract(mod(float(num) * 67123.313, 12.0) * sin(float(num) * 10.3) * cos(float(num)));\n}\n\nfloat wave(int num) {\n  float fn = float(num) * frequency * 0.1  * float(barWidth);\n  return cos(fn * 0.5) * cos(fn * 0.13) * sin((fn+10.0) * 0.3) / 2.0 + 0.5;\n}\n\nfloat pos(int num) {\n  return noise == 0.0 ? wave(num) : mix(wave(num), rand(num), noise);\n}\n\nvoid main() {\n  int bar = int(gl_FragCoord.x) / barWidth;\n  float scale = 1.0 + pos(bar) * amplitude;\n  float phase = progress * scale;\n  float posY = gl_FragCoord.y / resolution.y;\n  vec2 p;\n  vec4 c;\n  if (phase + posY < 1.0) {\n    p = vec2(gl_FragCoord.x, gl_FragCoord.y + mix(0.0, resolution.y, phase)) / resolution.xy;\n    c = texture2D(from, p);\n  } else {\n    p = gl_FragCoord.xy / resolution.xy;\n    c = texture2D(to, p);\n  }\n\n  // Finally, apply the color\n  gl_FragColor = c;\n}\n",
+    "uniforms" : {
+      "barWidth" : 10.0,
+      "noise" : 0.2,
+      "amplitude" : 2.0,
+      "frequency" : 1.0
+    }
+  },
+  glitch: {
+    "glsl" : "#ifdef GL_ES\nprecision highp float;\n#endif\nuniform sampler2D from, to;\nuniform float progress;\nuniform vec2 resolution;\nhighp float random(vec2 co)\n{\n    highp float a = 12.9898;\n    highp float b = 78.233;\n    highp float c = 43758.5453;\n    highp float dt= dot(co.xy ,vec2(a,b));\n    highp float sn= mod(dt,3.14);\n    return fract(sin(sn) * c);\n}\nfloat voronoi( in vec2 x ) {\n    vec2 p = floor( x );\n    vec2 f = fract( x );\n    float res = 8.0;\n    for( float j=-1.; j<=1.; j++ )\n    for( float i=-1.; i<=1.; i++ ) {\n        vec2  b = vec2( i, j );\n        vec2  r = b - f + random( p + b );\n        float d = dot( r, r );\n        res = min( res, d );\n    }\n    return sqrt( res );\n}\n\nvec2 displace(vec4 tex, vec2 texCoord, float dotDepth, float textureDepth, float strength) {\n    float b = voronoi(.003 * texCoord + 2.0);\n    float g = voronoi(0.2 * texCoord);\n    float r = voronoi(texCoord - 1.0);\n    vec4 dt = tex * 1.0;\n    vec4 dis = dt * dotDepth + 1.0 - tex * textureDepth;\n\n    dis.x = dis.x - 1.0 + textureDepth*dotDepth;\n    dis.y = dis.y - 1.0 + textureDepth*dotDepth;\n    dis.x *= strength;\n    dis.y *= strength;\n    vec2 res_uv = texCoord ;\n    res_uv.x = res_uv.x + dis.x - 0.0;\n    res_uv.y = res_uv.y + dis.y;\n    return res_uv;\n}\n\nfloat ease1(float t) {\n  return t == 0.0 || t == 1.0\n    ? t\n    : t < 0.5\n      ? +0.5 * pow(2.0, (20.0 * t) - 10.0)\n      : -0.5 * pow(2.0, 10.0 - (t * 20.0)) + 1.0;\n}\nfloat ease2(float t) {\n  return t == 1.0 ? t : 1.0 - pow(2.0, -10.0 * t);\n}\n\n\n\nvoid main() {\n  vec2 p = gl_FragCoord.xy / resolution.xy;\n  vec4 color1 = texture2D(from, p);\n  vec4 color2 = texture2D(to, p);\n  vec2 disp = displace(color1, p, 0.33, 0.7, 1.0-ease1(progress));\n  vec2 disp2 = displace(color2, p, 0.33, 0.5, ease2(progress));\n  vec4 dColor1 = texture2D(to, disp);\n  vec4 dColor2 = texture2D(from, disp2);\n  float val = ease1(progress);\n  vec3 gray = vec3(dot(min(dColor2, dColor1).rgb, vec3(0.299, 0.587, 0.114)));\n  dColor2 = vec4(gray, 1.0);\n  dColor2 *= 2.0;\n  color1 = mix(color1, dColor2, smoothstep(0.0, 0.5, progress));\n  color2 = mix(color2, dColor1, smoothstep(1.0, 0.5, progress));\n  gl_FragColor = mix(color1, color2, val);\n  //gl_FragColor = mix(gl_FragColor, dColor, smoothstep(0.0, 0.5, progress));\n  \n   //gl_FragColor = mix(texture2D(from, p), texture2D(to, p), progress);\n}",
+    "uniforms" : { },
   }
 };
 
 export default function funFade() {
   stop(this.oldElement);
-  var canvas = createCanvasOnTopOfElement(this.oldElement);
+  var canvas = createCanvas(this.oldElement, this.newElement);
+  var styleOptions = styleOptionsFromCanvas(canvas);
 
-  var convertOldElementToImage = D2I.toPng(this.oldElement[0]).then((dataUrl) => {
+  var convertOldElementToImage = D2I.toPng(this.oldElement[0], styleOptions).then((dataUrl) => {
     this.oldElement.css({visibility: 'hidden'});
     return imageFromDataUrl(dataUrl);
   }).catch(function (error) {
     console.error('Error converting the old element to an image.', error);
   });
 
-  var convertNewElementToImage = D2I.toPng(this.newElement[0], D2I_OPTS).then((dataUrl) => {
+  var convertNewElementToImage = D2I.toPng(this.newElement[0], styleOptions).then((dataUrl) => {
+    this.newElement.css({visibility: 'hidden'});
     return imageFromDataUrl(dataUrl);
   }).catch(function (error) {
     console.error('Error converting the new element to an image.', error);
@@ -53,10 +72,21 @@ export default function funFade() {
     fromImage: convertOldElementToImage,
     toImage: convertNewElementToImage
   }).then(function(hash) {
-    return animateTransition(canvas, TRANSITIONS.pageCurl, hash.fromImage, hash.toImage);
+    return animateTransition(canvas, TRANSITIONS.cube, hash.fromImage, hash.toImage);
   }).then(() => {
     showNewElement(this.newElement);
   });
+}
+
+function styleOptionsFromCanvas(canvas) {
+  return {
+    height: canvas.height,
+    width: canvas.width,
+
+    style: {
+      visibility: 'visible'
+    }
+  };
 }
 
 function showNewElement(newElement) {
@@ -65,14 +95,16 @@ function showNewElement(newElement) {
   }
 }
 
-function createCanvasOnTopOfElement($element) {
+function createCanvas($oldElement, $newElement) {
   var canvas = document.createElement('canvas');
+  var height = Math.max($oldElement.height(), $newElement.height());
+  var width = Math.max($oldElement.width(), $newElement.width());
   canvas.style.display = 'block';
   canvas.style.position = 'absolute';
-  canvas.style.top = $element.offset().top + 'px';
-  canvas.style.left = $element.offset().left + 'px';
-  canvas.width = $element.width();
-  canvas.height = $element.height();
+  canvas.style.top = $oldElement.offset().top + 'px';
+  canvas.style.left = $oldElement.offset().left + 'px';
+  canvas.width = width;
+  canvas.height = height;
 
   return canvas;
 }
@@ -103,7 +135,7 @@ function animationLoop(transition, fromTexture, toTexture, uniforms, duration) {
       if (!start) { start = timestamp; }
       var progress = ((timestamp - start) / duration) / 1.0;
 
-      if (progress > 1.0) {
+      if (progress >= 1.0) {
         raf.cancel(handle);
         resolve();
       }
@@ -116,12 +148,12 @@ function animationLoop(transition, fromTexture, toTexture, uniforms, duration) {
 function animateTransition(canvas, transitionData, fromImage, toImage) {
   var gl = canvas.getContext('webgl');
   if (!gl) { console.error('Unable to get WebGL context.'); }
-
-  document.body.appendChild(canvas);
   configureGl(gl);
+
   var { from, to } = texturesFromImages(gl, fromImage, toImage);
   var transition = createTransition(gl, transitionData.glsl);
 
+  document.body.appendChild(canvas);
   return animationLoop(transition, from, to, transitionData.uniforms, DURATION).then(function() {
       document.body.removeChild(canvas);
   });

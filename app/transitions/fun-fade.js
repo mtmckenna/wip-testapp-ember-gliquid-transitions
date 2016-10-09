@@ -7,6 +7,8 @@ import RSVP from 'rsvp';
 
 const D2I_OPTS = { style: { visibility: 'visible' } };
 
+const DURATION = 1000.0;
+
 const PIXELIZE_TRANSITION = {
   "glsl" : "#ifdef GL_ES\nprecision highp float;\n#endif\nuniform sampler2D from, to;\nuniform float progress;\nuniform vec2 resolution;\n\nfloat rand(vec2 co){\n  return fract(sin(dot(co.xy ,vec2(12.9898,78.233))) * 43758.5453);\n}\n\nvoid main() {\n  float revProgress = (1.0 - progress);\n  float distFromEdges = min(progress, revProgress);\n  float squareSize = (50.0 * distFromEdges) + 1.0;  \n  \n  vec2 p = (floor((gl_FragCoord.xy + squareSize * 0.5) / squareSize) * squareSize) / resolution.xy;\n  vec4 fromColor = texture2D(from, p);\n  vec4 toColor = texture2D(to, p);\n  \n  gl_FragColor = mix(fromColor, toColor, progress);\n}",
   "uniforms": { "persp": 0.7, "unzoom": 0.3, "reflection": 0.4, "floating": 3.0 }
@@ -93,19 +95,22 @@ function texturesFromImages(gl, fromImage, toImage) {
   };
 }
 
-function animationLoop(transition, fromTexture, toTexture, uniforms, duration, finishedCallback) {
+function animationLoop(transition, fromTexture, toTexture, uniforms, duration) {
   var start = null;
-  raf(function loop (timestamp) {
-    var handle = raf(loop);
-    if (!start) { start = timestamp; }
-    var progress = ((timestamp - start) / duration) / 1.0;
 
-    if (progress > 1.0) {
-      raf.cancel(handle);
-      finishedCallback();
-    }
+  return new Promise(function(resolve) {
+    raf(function loop (timestamp) {
+      var handle = raf(loop);
+      if (!start) { start = timestamp; }
+      var progress = ((timestamp - start) / duration) / 1.0;
 
-    transition.render(progress, fromTexture, toTexture, uniforms);
+      if (progress > 1.0) {
+        raf.cancel(handle);
+        resolve();
+      }
+
+      transition.render(progress, fromTexture, toTexture, uniforms);
+    });
   });
 }
 
@@ -118,10 +123,7 @@ function animateTransition(canvas, transitionData, fromImage, toImage) {
   var { from, to } = texturesFromImages(gl, fromImage, toImage);
   var transition = createTransition(gl, transitionData.glsl);
 
-  return new Promise(function(resolve) {
-    animationLoop(transition, from, to, transitionData.uniforms, 1000.0, function() {
+  return animationLoop(transition, from, to, transitionData.uniforms, DURATION).then(function() {
       document.body.removeChild(canvas);
-      resolve();
-    });
   });
 }
